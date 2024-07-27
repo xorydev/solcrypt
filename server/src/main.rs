@@ -1,134 +1,103 @@
-use actix_web::{dev::ServiceRequest, get, http::header, post, web, App, HttpResponse, HttpServer, Responder};
-use prisma_client_rust::PrismaClient;
-use serde::Deserialize;
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
-#[allow(unused, dead_code)]
-mod prisma;
+pub mod models;
+pub mod schema;
+
+use ntex::web::{ App,
+                 HttpServer,
+                 HttpResponse,
+                 Responder,
+                 get,
+                 post };
+use ntex::web;
+use diesel::prelude::*;
+use server::establish_connection;
+use serde::{ Serialize,
+             Deserialize };
+
+#[derive(Serialize, Deserialize)]
+pub struct ClientPaymentStatusRequest {
+    pub pw: String,
+    pub target_gid: i32,
+    pub set_paid: bool
+}
 
 #[get("/")]
-async fn index() -> impl Responder {
-    "HAAAAIIII :33"
+pub async fn hello() -> impl Responder {
+    HttpResponse::Ok().body("hai")
 }
 
-#[derive(Deserialize)]
-struct ClientRegisterRequest {
-    ip: String,
-    hostname: String
+#[post("/clients/{id}/register")]
+pub async fn register_client(path: web::types::Path<i32>) -> impl Responder {
+    use self::models::NewClient;
+    use crate::schema::clients;
+
+    let connection = &mut establish_connection();
+    let new_client = NewClient { gid: *path };
+
+    diesel::insert_into(clients::table)
+        .values(&new_client)
+        .returning(self::models::Client::as_returning())
+        .get_result(connection)
+        .expect("Error registering client");
+
+    HttpResponse::Ok().body("OK")
+
 }
 
-#[derive(Deserialize)]
-struct SetClientPaidRequest { password: String }
-
-#[post("/client/register/{id}")]
-async fn register_client(path: web::Path<u32>, info: web::Json<ClientRegisterRequest>) -> impl Responder {
-    let db_client = match prisma::PrismaClient::_builder().build().await {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("Error building Prisma Client: {:?}", err);
-            return HttpResponse::InternalServerError().body("Internal Server Error");
-        }
-    };
+#[get("/client/{id}/status")]
+pub async fn check_client_status(path: web::types::Path<i32>) -> impl Responder {
+    use self::schema::clients::dsl::*;
+    use self::models::*;
     
-    let client = match db_client.client().create(
-        format!("client_{}", path),
-        info.ip.to_string(),
-        info.hostname.to_string(),
-        false,
-        vec![]
-    ).exec().await {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("Error building Prisma Client: {:?}", err);
-            return HttpResponse::InternalServerError().body("Internal Server Error");
-        }
-    };
-    HttpResponse::Ok().json(client)
-}
-
-#[get("/client/{id}/ispaid")]
-async fn get_client_payment(path: web::Path<u32>) -> impl Responder {
-    let db_client = match prisma::PrismaClient::_builder().build().await {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("Error building Prisma Client: {:?}", err);
-            return HttpResponse::InternalServerError().body("Internal Server Error");
-        }
-    };
-    
-    let client = match db_client.client()
-        .find_unique(prisma::client::id::equals(path.to_string()))
-        .exec()
-        .await
-        .unwrap() {
-            Some(client) => client,
-            None => {
-                eprintln!("Couldn't find client");
+    let req_gid: i32 = path.clone();
+    let connection = &mut establish_connection();
+    let results: Vec<Client> = match clients
+        .filter(gid.eq(req_gid))
+        .limit(1)
+        .load(connection) {
+            Ok(vec) => vec,
+            Err(..) => {
                 return HttpResponse::NotFound().body("Not Found");
             }
-    };
+        };
 
-    HttpResponse::Ok().body(client.paid.to_string())
-}
-
-#[post("/client/{id}/setpaid")]
-pub async fn set_client_paid(path: web::Path<String>, info: web::Json<SetClientPaidRequest>) -> impl Responder {
-
-    let mut dotenv = File::open(".env").await.unwrap();
-    let mut dotenv_contents = String::new();
-    match dotenv.read_to_string(&mut dotenv_contents).await {
-        Ok(result) => result,
-        Err(err) => {
-            eprintln!("Encountered error: {:?}", err);
-            return HttpResponse::InternalServerError().body("Internal Server Error");
-        },
-    };
-
-    let password = dotenv_contents
-        .lines()
-        .filter(|line| line.starts_with("PASSWORD="))
-        .next()
-        .unwrap()
-        .split("=")
-        .last()
-        .unwrap(); // don't shout at me for the unwraps, your goddamn fault if you fucked the .env
-                   // file
+    let ispaid = results[0].paid;
     
-    if path.to_string() != password { return HttpResponse::Forbidden().body("Forbidden") }
-
-    let db_client = match prisma::PrismaClient::_builder().build().await {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("Error creating Prisma Client: {:?}", err);
-            return HttpResponse::InternalServerError().body("Internal Server Error");
-        },
-     };
-
-    let mut client = match db_client
-        .client()
-        .find_first(vec![prisma::client::id::equals(path.to_string())])
-        .exec()
-        .await
-        .unwrap() {
-            Some(client) => client,
-            None => {
-                eprintln!("Couldn't find client!");
-                return HttpResponse::NotFound().body("Not Found");
-            },
-    };
-
-    client.paid = true;
-
-    HttpResponse::Ok().body("Ok")
+    HttpResponse::Ok().body(format!("Paid: {}", ispaid))
 }
 
-#[actix_web::main]
-pub async fn main() -> std::io::Result<()> {
+#[post("/admin/client/setstatus")]
+pub async fn set_client_status(body: ntex::web::types::Json<ClientPaymentStatusRequest>) -> impl Responder {
+    use crate::schema::clients::dsl::clients;
+    use crate::schema::clients::{gid, paid};
+    use crate::models::Client;
+
+    let pw = "ToBeReplacedByBuildScript";
+    if body.pw == pw {
+        let connection = &mut establish_connection();
+        let results = diesel::update(&clients.filter(gid.eq(body.target_gid))
+            .first::<Client>(connection)
+            .expect("Client not found"))
+            .set(paid.eq(body.set_paid))
+            .get_result::<Client>(connection)
+            .expect("Could not update Client");
+
+        return HttpResponse::Ok().json(&results);
+    } else {
+        return HttpResponse::Unauthorized().body("Invalid Password")
+    }
+}
+
+
+#[ntex::main]
+async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
+            .service(hello)
+            .service(register_client)
+            .service(check_client_status)
+            .service(set_client_status)
     })
-    .bind("127.0.0.1:8080")?
+    .bind(("127.0.0.1", 8080))?
     .run()
     .await
 }
-

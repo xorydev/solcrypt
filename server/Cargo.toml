@@ -4,9 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-web = "4.8.0"
-prisma-client-rust = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11" }
-prisma-client-rust-cli = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.11" }
-serde = "1.0.203"
-tokio = "1.38.0"
-
+diesel = { version = "2.2", features = [ "postgres" ] }
+dotenvy = "0.15.7"
+ntex = { version = "2.0", features = [ "tokio" ] }
+serde = "1.0.204"

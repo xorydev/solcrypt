@@ -4,13 +4,12 @@ version = "0.2.0"
 edition = "2021"
 
 [[bin]]
-name = "solcrypt_main"
+name = "encryptor"
 path = "src/encrypt.rs"
 
 [[bin]]
 name = "decryptor"
 path = "src/decrypt.rs"
-
 
 [dependencies]
 aes = "0.7.5"
